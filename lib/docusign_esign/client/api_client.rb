@@ -62,6 +62,7 @@ module DocuSign_eSign
           fail ApiError.new('Connection timed out')
         elsif response.code == 0
           # Errors from libcurl will be made visible here
+          @config.logger.debug "HTTP response return message ~BEGIN~\n#{response.return_message}\n~END~\n"
           fail ApiError.new(:code => 0,
                             :message => response.return_message)
         else
