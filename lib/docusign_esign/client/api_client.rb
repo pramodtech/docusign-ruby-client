@@ -13,7 +13,7 @@ require 'date'
 require 'json'
 require 'logger'
 require 'tempfile'
-require 'typhoeus'
+require 'rest-client'
 require 'uri'
 require 'jwt'
 
@@ -51,7 +51,7 @@ module DocuSign_eSign
     #   the data deserialized from response body (could be nil), response status code and response headers.
     def call_api(http_method, path, opts = {})
       request = build_request(http_method, path, opts)
-      response = request.run
+      response = request.execute
 
       if @config.debugging
         @config.logger.debug "HTTP response body ~BEGIN~\n#{response.body}\n~END~\n"
@@ -89,7 +89,7 @@ module DocuSign_eSign
     # @option opts [Hash] :query_params Query parameters
     # @option opts [Hash] :form_params Query parameters
     # @option opts [Object] :body HTTP body (JSON/XML)
-    # @return [Typhoeus::Request] A Typhoeus Request
+    # @return [RestClient::Request] A RestClient::Request
     def build_request(http_method, path, opts = {})
       url = build_request_url(path, opts)
       http_method = http_method.to_sym.downcase
@@ -108,20 +108,21 @@ module DocuSign_eSign
       _verify_ssl_host = @config.verify_ssl_host ? 2 : 0
 
       req_opts = {
+        :url => url,
         :method => http_method,
         :headers => header_params,
         :params => query_params,
-        :params_encoding => @config.params_encoding,
-        :timeout => @config.timeout,
-        :ssl_verifypeer => @config.verify_ssl,
-        :ssl_verifyhost => _verify_ssl_host,
-        :sslcert => @config.cert_file,
-        :sslkey => @config.key_file,
-        :verbose => @config.debugging
+        # :params_encoding => @config.params_encoding,
+        :timeout => nil,
+        :verify_ssl => @config.verify_ssl,
+        # :ssl_verifyhost => _verify_ssl_host,
+        :ssl_client_cert => @config.cert_file,
+        :ssl_client_key => @config.key_file,
+        # :verbose => @config.debugging
       }
 
       # set custom cert, if provided
-      req_opts[:cainfo] = @config.ssl_ca_cert if @config.ssl_ca_cert
+      req_opts[:ssl_ca_file] = @config.ssl_ca_cert if @config.ssl_ca_cert
 
       if [:post, :patch, :put, :delete].include?(http_method)
         req_body = build_request_body(header_params, form_params, opts[:body])
@@ -131,7 +132,7 @@ module DocuSign_eSign
         end
       end
 
-      Typhoeus::Request.new(url, req_opts)
+      RestClient::Request.new(req_opts)
     end
 
     # Check if the given MIME is a JSON MIME.
@@ -507,7 +508,7 @@ module DocuSign_eSign
           "exp" => now + expires_in,
           "scope"=> scopes
       }
-      
+
       private_key = if private_key_or_filename.include?("-----BEGIN RSA PRIVATE KEY-----")
                       private_key_or_filename
                     else
