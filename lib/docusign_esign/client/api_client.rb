@@ -61,7 +61,7 @@ module DocuSign_eSign
         @config.logger.debug "HTTP response body ~BEGIN~\n#{response.body}\n~END~\n"
       end
 
-      if response.code != 200
+      if response.code >= 400
         fail ApiError.new(:code => response.code,
                           :response_headers => response.headers,
                           :response_body => response.body)
