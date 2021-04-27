@@ -60,11 +60,12 @@ module DocuSign_eSign
       unless response.success?
         if response.timed_out?
           fail ApiError.new('Connection timed out')
-        elsif response.code == 0
-          # Errors from libcurl will be made visible here
-          fail ApiError.new(:code => 0,
-                            :message => response.return_message)
-        else
+        # ignore response.code 0
+        # elsif response.code == 0
+        #   # Errors from libcurl will be made visible here
+        #   fail ApiError.new(:code => 0,
+        #                     :message => response.return_message)
+        elsif response.code >= 400
           fail ApiError.new(:code => response.code,
                             :response_headers => response.headers,
                             :response_body => response.body),
@@ -506,7 +507,7 @@ module DocuSign_eSign
           "exp" => now + expires_in,
           "scope"=> scopes
       }
-      
+
       private_key = if private_key_or_filename.include?("-----BEGIN RSA PRIVATE KEY-----")
                       private_key_or_filename
                     else
