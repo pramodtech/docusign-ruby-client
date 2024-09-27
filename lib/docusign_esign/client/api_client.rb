@@ -13,7 +13,7 @@ require 'date'
 require 'json'
 require 'logger'
 require 'tempfile'
-require 'typhoeus'
+require 'rest-client'
 require 'uri'
 require 'jwt'
 
@@ -51,26 +51,20 @@ module DocuSign_eSign
     #   the data deserialized from response body (could be nil), response status code and response headers.
     def call_api(http_method, path, opts = {})
       request = build_request(http_method, path, opts)
-      response = request.run
+      response = begin
+        request.execute
+      rescue RestClient::ExceptionWithResponse=> e
+        e.response
+      end
 
       if @config.debugging
         @config.logger.debug "HTTP response body ~BEGIN~\n#{response.body}\n~END~\n"
       end
 
-      unless response.success?
-        if response.timed_out?
-          fail ApiError.new('Connection timed out')
-        elsif response.code == 0
-          # Errors from libcurl will be made visible here
-          @config.logger.debug "HTTP response return message ~BEGIN~\n#{response.return_message}\n~END~\n"
-          fail ApiError.new(:code => 0,
-                            :message => response.return_message)
-        else
-          fail ApiError.new(:code => response.code,
-                            :response_headers => response.headers,
-                            :response_body => response.body),
-               response.status_message
-        end
+      if response.code >= 400
+        fail ApiError.new(:code => response.code,
+                          :response_headers => response.headers,
+                          :response_body => response.body)
       end
 
       if opts[:return_type]
@@ -89,7 +83,7 @@ module DocuSign_eSign
     # @option opts [Hash] :query_params Query parameters
     # @option opts [Hash] :form_params Query parameters
     # @option opts [Object] :body HTTP body (JSON/XML)
-    # @return [Typhoeus::Request] A Typhoeus Request
+    # @return [RestClient::Request] A RestClient::Request
     def build_request(http_method, path, opts = {})
       url = build_request_url(path, opts)
       http_method = http_method.to_sym.downcase
@@ -108,30 +102,31 @@ module DocuSign_eSign
       _verify_ssl_host = @config.verify_ssl_host ? 2 : 0
 
       req_opts = {
+        :url => url,
         :method => http_method,
         :headers => header_params,
         :params => query_params,
-        :params_encoding => @config.params_encoding,
-        :timeout => @config.timeout,
-        :ssl_verifypeer => @config.verify_ssl,
-        :ssl_verifyhost => _verify_ssl_host,
-        :sslcert => @config.cert_file,
-        :sslkey => @config.key_file,
-        :verbose => @config.debugging
+        # :params_encoding => @config.params_encoding,
+        :timeout => nil,
+        :verify_ssl => @config.verify_ssl,
+        # :ssl_verifyhost => _verify_ssl_host,
+        :ssl_client_cert => @config.cert_file,
+        :ssl_client_key => @config.key_file,
+        # :verbose => @config.debugging
       }
 
       # set custom cert, if provided
-      req_opts[:cainfo] = @config.ssl_ca_cert if @config.ssl_ca_cert
+      req_opts[:ssl_ca_file] = @config.ssl_ca_cert if @config.ssl_ca_cert
 
       if [:post, :patch, :put, :delete].include?(http_method)
         req_body = build_request_body(header_params, form_params, opts[:body])
-        req_opts.update :body => req_body
+        req_opts.update :payload => req_body
         if @config.debugging
           @config.logger.debug "HTTP request body param ~BEGIN~\n#{req_body}\n~END~\n"
         end
       end
 
-      Typhoeus::Request.new(url, req_opts)
+      RestClient::Request.new(req_opts)
     end
 
     # Check if the given MIME is a JSON MIME.
@@ -507,7 +502,7 @@ module DocuSign_eSign
           "exp" => now + expires_in,
           "scope"=> scopes
       }
-      
+
       private_key = if private_key_or_filename.include?("-----BEGIN RSA PRIVATE KEY-----")
                       private_key_or_filename
                     else
